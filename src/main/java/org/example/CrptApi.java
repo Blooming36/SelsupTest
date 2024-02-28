@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.io.IOException;
@@ -16,7 +17,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -25,24 +25,25 @@ import java.util.concurrent.TimeUnit;
 
 public class CrptApi {
 
-    private final String apiUrl = "https://ismp.crpt.ru/api/v3/lk/documents/create";
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Semaphore requestSemaphore;
+
 
     public CrptApi(TimeUnit timeUnit, int requestLimit) {
         this.httpClient = HttpClient.newHttpClient();
         this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         this.requestSemaphore = new Semaphore(requestLimit);
-        Runnable releasePermitTask = () -> {
-            try {
-                requestSemaphore.release();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        };
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-        scheduler.scheduleAtFixedRate(releasePermitTask, 0, timeUnit.toSeconds(1), TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(this::releasePermit, 0, timeUnit.toSeconds(1), TimeUnit.SECONDS);
+    }
+
+    private void releasePermit() {
+        try {
+            requestSemaphore.release();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public void createDocument(Document document, String signature) {
@@ -52,16 +53,11 @@ public class CrptApi {
             ObjectNode requestBody = objectMapper.readValue(documentJson, ObjectNode.class);
             requestBody.put("signature", signature);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(new URI(apiUrl))
+                    .uri(new URI("apiUrl"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() == 200) {
-                System.out.println("Document created successfully");
-            } else {
-                System.err.println("Failed to create document. HTTP Status Code: " + response.statusCode());
-            }
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         } catch (URISyntaxException e) {
@@ -83,6 +79,7 @@ public class CrptApi {
     @Getter
     @Setter
     @AllArgsConstructor
+    @NoArgsConstructor
     public static class Document {
         private Description description;
         private String doc_id;
@@ -104,6 +101,7 @@ public class CrptApi {
     @Getter
     @Setter
     @AllArgsConstructor
+    @NoArgsConstructor
     public static class Product {
         private String certificate_document;
         @JsonFormat(pattern = "yyyy-MM-dd")
@@ -120,32 +118,7 @@ public class CrptApi {
 
     public static void main(String[] args) {
         CrptApi crptApi = new CrptApi(TimeUnit.SECONDS, 5);
-        Document document = new Document(
-                new Description("1234567890"),
-                "doc123",
-                "pending",
-                "LP_INTRODUCE_GOODS",
-                true,
-                "9876543210",
-                "1234567890",
-                "5555555555",
-                LocalDate.parse("2020-01-23", DateTimeFormatter.ISO_DATE),
-                "type1",
-                List.of(new Product(
-                        "cert123",
-                        LocalDate.parse("2020-01-23", DateTimeFormatter.ISO_DATE),
-                        "cert456",
-                        "9876543210",
-                        "5555555555",
-                        LocalDate.parse("2020-01-23", DateTimeFormatter.ISO_DATE),
-                        "code123",
-                        "code456",
-                        "code789"
-                )),
-                LocalDate.parse("2020-01-23", DateTimeFormatter.ISO_DATE),
-                "reg123"
-        );
-
+        Document document = new Document();
         String signature = "sampleSignature";
         crptApi.createDocument(document, signature);
     }
