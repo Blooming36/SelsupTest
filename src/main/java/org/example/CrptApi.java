@@ -39,7 +39,7 @@ public class CrptApi {
         }
     }
 
-    public void createDocument(Document document, String signature) throws  IOException {
+    public void createDocument(Document document, String signature) throws IOException {
         CloseableHttpClient httpClient = HttpClientBuilder.create().build();
         HttpPost httpPost = new HttpPost("apiUrl");
         String requestBody = "{\"document\": " + document + ", \"signature\": \"" + signature + "\"}";
