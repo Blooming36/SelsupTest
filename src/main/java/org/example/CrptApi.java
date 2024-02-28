@@ -2,20 +2,17 @@ package org.example;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -25,14 +22,10 @@ import java.util.concurrent.TimeUnit;
 
 public class CrptApi {
 
-    private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
     private final Semaphore requestSemaphore;
 
 
     public CrptApi(TimeUnit timeUnit, int requestLimit) {
-        this.httpClient = HttpClient.newHttpClient();
-        this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         this.requestSemaphore = new Semaphore(requestLimit);
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         scheduler.scheduleAtFixedRate(this::releasePermit, 0, timeUnit.toSeconds(1), TimeUnit.SECONDS);
@@ -46,25 +39,13 @@ public class CrptApi {
         }
     }
 
-    public void createDocument(Document document, String signature) {
-        try {
-            requestSemaphore.acquire();
-            String documentJson = objectMapper.writeValueAsString(document);
-            ObjectNode requestBody = objectMapper.readValue(documentJson, ObjectNode.class);
-            requestBody.put("signature", signature);
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(new URI("apiUrl"))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        } finally {
-            requestSemaphore.release();
-        }
+    public void createDocument(Document document, String signature) throws  IOException {
+        CloseableHttpClient httpClient = HttpClientBuilder.create().build();
+        HttpPost httpPost = new HttpPost("apiUrl");
+        String requestBody = "{\"document\": " + document + ", \"signature\": \"" + signature + "\"}";
+        StringEntity entity = new StringEntity(requestBody, ContentType.APPLICATION_JSON);
+        httpPost.setEntity(entity);
+        httpClient.execute(httpPost);
     }
 
 
@@ -116,7 +97,7 @@ public class CrptApi {
         private String uitu_code;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         CrptApi crptApi = new CrptApi(TimeUnit.SECONDS, 5);
         Document document = new Document();
         String signature = "sampleSignature";
